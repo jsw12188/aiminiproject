@@ -45,7 +45,7 @@
 
 
 ## 디렉토리 구조
-<pre><code>'''
+<pre><code>
 AI_MINI_PROJECT/
 │
 ├── .env
@@ -61,7 +61,7 @@ AI_MINI_PROJECT/
 │   ├── partner_analysis_agent.py
 │   ├── region_selection_agent.py
 │   └── report_writing_agent.py
-'''</code></pre>
+</code></pre>
 
 ## 보고서(최종 산출물) 양식
 

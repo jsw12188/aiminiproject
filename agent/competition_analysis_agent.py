@@ -1,11 +1,17 @@
 from prompt_templates import COMPETITION_PROMPT
 
 class CompetitionAnalysisAgent:
-    def __init__(self, llm, search_tool):
+    def __init__(self, llm, search):
         self.llm = llm
-        self.search = search_tool
+        self.search = search
 
     def run(self, country):
-        web_data = self.search.invoke(f"{country} AI 분야 주요 경쟁사 및 시장 점유율")
+        web_result = self.search.invoke(f"{country} AI 산업 주요 경쟁사, 시장 구조")
+        web_data = "\n".join([r.get("snippet", "") for r in web_result])
+        sources = [(r.get("title", ""), r.get("url", "")) for r in web_result]
         prompt = COMPETITION_PROMPT.format(country=country, web_data=web_data)
-        return self.llm.invoke(prompt).content
+        out = self.llm.invoke(prompt)
+        return {
+            "summary": out.content,
+            "sources": sources,
+        }

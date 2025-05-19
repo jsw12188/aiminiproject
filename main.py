@@ -1,9 +1,9 @@
 import os
+import json
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_community.tools.tavily_search.tool import TavilySearchResults
 from langchain_core.messages import AIMessage
-import ast
 
 from agent.market_analysis_agent import MarketAnalysisAgent
 from agent.company_analysis_agent import CompanyAnalysisAgent
@@ -14,6 +14,7 @@ from agent.report_writing_agent import ReportWritingAgent
 
 from langgraph.graph import StateGraph, START, END
 from state import WorkflowState
+from prompt_templates import REPORT_WRITING_PROMPT
 
 load_dotenv()
 llm = ChatOpenAI(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
@@ -22,7 +23,6 @@ search = TavilySearchResults()
 company_name = input("분석할 기업명을 입력하세요: ").strip()
 countries = ["United States", "China"]
 
-# 에이전트 초기화
 market_agent = MarketAnalysisAgent(llm, search)
 company_agent = CompanyAnalysisAgent(llm, search)
 region_agent = RegionSelectionAgent(llm)
@@ -30,22 +30,29 @@ competition_agent = CompetitionAnalysisAgent(llm, search)
 partner_agent = PartnerAnalysisAgent(llm, search)
 report_agent = ReportWritingAgent(llm)
 
-# LangGraph 노드 함수 정의
 def market_node(state):
     market_results = {}
+    market_sources = []
     for country in countries:
-        market_results[country] = market_agent.run(country)
-    # dict를 string으로 감싸서 메시지에 저장
-    return {"market": [AIMessage(content=str(market_results))]}
+        out = market_agent.run(country)
+        market_results[country] = out["summary"]
+        for t, url in out["sources"]:
+            market_sources.append((country, t, url))
+    return {
+        "market": [AIMessage(content=json.dumps(market_results))],
+        "market_sources": [AIMessage(content=json.dumps(market_sources))]
+    }
 
 def company_node(state):
-    company_result = company_agent.run(company_name)
-    return {"company": [AIMessage(content=company_result)]}
+    out = company_agent.run(company_name)
+    return {
+        "company": [AIMessage(content=out["summary"])],
+        "company_sources": [AIMessage(content=json.dumps(out["sources"]))]
+    }
 
 def selection_node(state):
     import re
-    import ast
-    market_results = ast.literal_eval(state["market"][0].content)
+    market_results = json.loads(state["market"][0].content)
     company_result = state["company"][0].content
     try:
         strength_block = company_result.split("- 약점:")[0].replace("- 강점:", "").strip()
@@ -63,30 +70,40 @@ def selection_node(state):
         score = int(m.group(1)) if m else 0
         scores.append((country, score, suitability))
     top_country = max(scores, key=lambda x: x[1])[0]
-    print("DEBUG selection_results (in node):", selection_results)
     return {
         "selected_country": [AIMessage(content=top_country)],
-        "selection_results": [AIMessage(content=str(selection_results))]
+        "selection_results": [AIMessage(content=json.dumps(selection_results))]
     }
 
 def competition_node(state):
     country = state["selected_country"][0].content
-    result = competition_agent.run(country)
-    return {"competitors": [AIMessage(content=result)]}
+    out = competition_agent.run(country)
+    return {
+        "competitors": [AIMessage(content=out["summary"])],
+        "competitors_sources": [AIMessage(content=json.dumps(out["sources"]))]
+    }
 
 def partner_node(state):
     country = state["selected_country"][0].content
-    result = partner_agent.run(country)
-    return {"partners": [AIMessage(content=result)]}
+    out = partner_agent.run(country)
+    return {
+        "partners": [AIMessage(content=out["summary"])],
+        "partners_sources": [AIMessage(content=json.dumps(out["sources"]))]
+    }
 
 def report_node(state):
+    market_result = json.loads(state["market"][0].content)
+    market_sources = json.loads(state["market_sources"][0].content)
     company_result = state["company"][0].content
-    market_result = ast.literal_eval(state["market"][0].content)
+    company_sources = json.loads(state["company_sources"][0].content)
     selection_results_raw = state.get("selection_results", [AIMessage(content="{}")])[0].content
-    selection_results = ast.literal_eval(selection_results_raw)
+    selection_results = json.loads(selection_results_raw)
     country = state["selected_country"][0].content
+    competitors = state["competitors"][0].content
+    competitors_sources = json.loads(state["competitors_sources"][0].content)
+    partners = state["partners"][0].content
+    partners_sources = json.loads(state["partners_sources"][0].content)
 
-    # 키 보정
     if country not in selection_results:
         for k in selection_results.keys():
             if country in k:
@@ -97,25 +114,34 @@ def report_node(state):
     else:
         country_key = country
 
-    competitors = state["competitors"][0].content
-    partners = state["partners"][0].content
-    report = report_agent.run(
+    # 출처 모으기 (market/company/competitors/partners)
+    ref_md = ""
+    for c, t, url in market_sources:
+        ref_md += f"- [시장][{c}] {t}: <{url}>\n"
+    for t, url in company_sources:
+        ref_md += f"- [기업] {t}: <{url}>\n"
+    for t, url in competitors_sources:
+        ref_md += f"- [경쟁사] {t}: <{url}>\n"
+    for t, url in partners_sources:
+        ref_md += f"- [파트너] {t}: <{url}>\n"
+    if not ref_md:
+        ref_md = "- (자료 및 출처는 현재 제공된 링크의 정보를 활용합니다. 보다 구체적인 자료는 최신 데이터와 보고서를 참고하십시오.)"
+
+    market_compare = ""  # PESTEL 비교 등 원하는 내용 구현
+    report = llm.invoke(REPORT_WRITING_PROMPT.format(
         company=company_result,
-        market=f"## {country}\n{market_result[country]}",
-        selection=selection_results[country_key],  # ★ 반드시 country_key로!
-        competitors=f"## {country}\n{competitors}",
-        partners=f"## {country}\n{partners}"
-    )
+        market=market_compare,
+        selection=selection_results[country_key],
+        competitors=competitors,
+        partners=partners,
+        references=ref_md
+    )).content
+
     with open("final_report.md", "w", encoding="utf-8") as f:
         f.write(report)
     print("\n✅ 전략 보고서가 'final_report.md'에 저장되었습니다.")
-    print("DEBUG selection_results_raw (in report):", selection_results_raw)
-    print("DEBUG selection_results (in report):", selection_results)
-    print("DEBUG country:", country)
     return {"report": [AIMessage(content=report)]}
 
-
-# LangGraph 워크플로우 정의
 g = StateGraph(WorkflowState)
 g.add_node("market_node", market_node)
 g.add_node("company_node", company_node)
@@ -123,7 +149,6 @@ g.add_node("selection_node", selection_node)
 g.add_node("competition_node", competition_node)
 g.add_node("partner_node", partner_node)
 g.add_node("report_node", report_node)
-
 g.add_edge(START, "market_node")
 g.add_edge("market_node", "company_node")
 g.add_edge("company_node", "selection_node")
