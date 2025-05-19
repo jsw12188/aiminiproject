@@ -32,12 +32,17 @@
 - 전략 보고서 작성 Agent: 전체 분석 결과와 전략적 인사이트를 종합하여, 맞춤형 진출 전략 보고서 작성·정리
 
 ## State 
-    market: Annotated[Sequence[BaseMessage], add_messages]
-    company: Annotated[Sequence[BaseMessage], add_messages]
-    selected_country: Annotated[Sequence[BaseMessage], add_messages]
-    competitors: Annotated[Sequence[BaseMessage], add_messages]
-    partners: Annotated[Sequence[BaseMessage], add_messages]
-    report: Annotated[Sequence[BaseMessage], add_messages]
+    market: Annotated[Sequence[BaseMessage], add_messages]   # 시장 분석 에이전트 
+    market_sources: Annotated[Sequence[BaseMessage], add_messages] # 웹 서칭 출처
+    company: Annotated[Sequence[BaseMessage], add_messages] # 기업 분석 에이전트
+    company_sources: Annotated[Sequence[BaseMessage], add_messages] # 웹 서칭 출처       
+    selected_country: Annotated[Sequence[BaseMessage], add_messages] # 진출 지역 선정 agent
+    selection_results: Annotated[Sequence[BaseMessage], add_messages] # 선정 결과 
+    competitors: Annotated[Sequence[BaseMessage], add_messages] # 경쟁 환경 분석 에이전트
+    competitors_sources: Annotated[Sequence[BaseMessage], add_messages] # 웹 서칭 출처     
+    partners: Annotated[Sequence[BaseMessage], add_messages] # 파트너 분석 에이전트 
+    partners_sources: Annotated[Sequence[BaseMessage], add_messages] # 웹 서칭 출처     
+    report: Annotated[Sequence[BaseMessage], add_messages] # 보고서 작성 에이전트
 
 
 ## 에이전트 아키텍처
