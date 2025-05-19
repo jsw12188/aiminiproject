@@ -16,6 +16,9 @@ from langgraph.graph import StateGraph, START, END
 from state import WorkflowState
 from prompt_templates import REPORT_WRITING_PROMPT
 
+import markdown
+import pdfkit
+
 load_dotenv()
 llm = ChatOpenAI(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
 search = TavilySearchResults()
@@ -139,7 +142,28 @@ def report_node(state):
 
     with open("final_report.md", "w", encoding="utf-8") as f:
         f.write(report)
-    print("\n✅ 전략 보고서가 'final_report.md'에 저장되었습니다.")
+    style = """
+            <style>
+            body {
+                font-family: "Malgun Gothic", "Nanum Gothic", "Apple SD Gothic Neo", sans-serif;
+                line-height: 1.6;
+                font-size: 14px;
+            }
+            table {
+                border-collapse: collapse;
+                width: 100%;
+            }
+            table, th, td {
+                border: 1px solid black;
+                padding: 6px;
+                text-align: left;
+            }
+            </style>
+            """
+    html = style + markdown.markdown(report, extensions=["tables"])
+
+    pdfkit.from_string(html, "final_report.pdf", options={"encoding": "utf-8"})
+    print("\n✅ 전략 보고서가 'final_report.pdf'에도 저장되었습니다.")
     return {"report": [AIMessage(content=report)]}
 
 g = StateGraph(WorkflowState)
